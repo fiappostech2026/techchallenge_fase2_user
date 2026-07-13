@@ -1,0 +1,12 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Text;
+
+namespace FCG.Usuario.Domain.Configurations
+{
+    public class JwtSettings
+    {
+        public string SecretKey { get; set; } = string.Empty;
+        public int ExpirationHours { get; set; }
+    }
+}
