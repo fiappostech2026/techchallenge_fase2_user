@@ -6,3 +6,5 @@ data:
   RABBITMQ__HOST: "rabbitmq"
   RABBITMQ__VIRTUALHOST: "/"
   ACCEPT_EULA: "Y"
+  Jwt__Issuer: "FCG.Catalog.Api"
+  Jwt__Audience: "FCG.Catalog.Client"
