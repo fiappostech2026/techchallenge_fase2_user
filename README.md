@@ -156,9 +156,9 @@ docker run --rm \
 | `RabbitMQ__Username` | Usuário de acesso ao RabbitMQ | `guest` |
 | `RabbitMQ__Password` | Senha de acesso ao RabbitMQ | `guest` |
 | `ConnectionStrings__DefaultConnection` | Endereço e credenciais do banco de dados SQL Server | `Server=users-sqlserver,1433;Database=users;...` |
-| `Jwt__SecretKey` | Chave secreta usada para assinar o "crachá digital" (JWT) do usuário | `FCG_USUARIO_SECRET_KEY_2026_SUPER_SECRETA` |
-| `Jwt__Issuer` | Quem emite o token (carimbado no JWT) | `FCG.Usuario.Api` |
-| `Jwt__Audience` | Para quem o token se destina (carimbado no JWT) | `FCG.Usuario.Client` |
+| `Jwt__SecretKey` | Chave secreta usada para assinar o "crachá digital" (JWT) do usuário | `tech-challenge-fase-2-fcg-chave-secreta-jwt-256bits-minimo` |
+| `Jwt__Issuer` | Quem emite o token (carimbado no JWT) | `FCG.Catalog.Api` (k8s/local) — `FCG.Usuario.Api` (docker-compose) |
+| `Jwt__Audience` | Para quem o token se destina (carimbado no JWT) | `FCG.Catalog.Client` (k8s/local) — `FCG.Usuario.Client` (docker-compose) |
 
 > No Docker/Kubernetes, essas variáveis são escritas com **duplo underscore**
 > (`RABBITMQ__HOST`), que é a forma como o .NET entende "seção : chave" vindo de variáveis de
@@ -166,12 +166,18 @@ docker run --rm \
 
 > **Acoplamento importante com o Catálogo:** o Catálogo valida os tokens JWT emitidos por este
 > serviço, e para isso os dois precisam usar **exatamente a mesma** `Jwt__SecretKey` /
-> `JwtSettings__SecretKey`. No `docker-compose.yml` do repositório de orquestração, ambos recebem
-> o mesmo valor compartilhado (`tech-challenge-fase-2-fcg-chave-secreta-jwt-256bits-minimo`, via a
-> variável `JWT_SECRET_KEY`), então funcionam juntos. Atenção: o valor padrão do `appsettings.json`
-> deste serviço (`FCG_USUARIO_SECRET_KEY_2026_SUPER_SECRETA`) é **diferente** do padrão do Catálogo
-> — logo, tokens gerados rodando os dois serviços "no braço" (`dotnet run`, sem sobrescrever a
-> chave) não serão aceitos pelo Catálogo. Rodar via `docker-compose` alinha os dois automaticamente.
+> `JwtSettings__SecretKey`, além do mesmo `Issuer`/`Audience`. Isso já é garantido hoje em cada
+> ambiente (corrigido depois de um 401 causado por divergência entre os dois serviços):
+> - **Local / `dotnet run` direto:** `appsettings.json` deste serviço e do Catálogo já usam o
+>   mesmo `SecretKey`/`Issuer` (`FCG.Catalog.Api`)/`Audience` (`FCG.Catalog.Client`).
+> - **Kubernetes:** `k8s/secret.yaml` deste serviço injeta o `Jwt__SecretKey` correto via env var
+>   (sobrescreve o `appsettings.json`); `k8s/configmap.yaml` injeta `Jwt__Issuer`/`Jwt__Audience`
+>   também alinhados com o Catálogo.
+> - **`docker-compose` (repositório de orquestração):** ambos recebem o mesmo `JWT_SECRET_KEY`,
+>   mas com `Issuer`/`Audience` diferentes dos usados em k8s/local (`FCG.Usuario.Api`/
+>   `FCG.Usuario.Client`) — token gerado nesse ambiente não vale nos outros dois, e vice-versa. É
+>   esperado (cada ambiente é uma execução isolada), mas fica registrado como pegadinha de
+>   manutenção — ver seção 8.
 
 ---
 
@@ -183,7 +189,7 @@ Os manifestos estão na pasta `/k8s` deste repositório:
 |---|---|
 | `deployment.yaml` | Sobe o container deste serviço, com sondas de saúde (*liveness*/*readiness*) apontando para `/api/health` |
 | `service.yaml` | Dá o nome de rede `users-api` para outros serviços acharem este |
-| `configmap.yaml` | Guarda o endereço e vhost do RabbitMQ e o `ACCEPT_EULA` do SQL Server (não são segredos) |
+| `configmap.yaml` | Guarda o endereço e vhost do RabbitMQ, o `ACCEPT_EULA` do SQL Server e o `Jwt__Issuer`/`Jwt__Audience` (não são segredos, mas precisam bater com o Catálogo) |
 | `secret.yaml` | Guarda usuário/senha do RabbitMQ, a string de conexão do banco, a chave do JWT e a senha do SQL Server (dados sensíveis) |
 | `sqlserver-deployment.yaml` | Sobe o banco de dados SQL Server usado por este serviço |
 | `sqlserver-service.yaml` | Dá o nome de rede `users-sqlserver` para este serviço achar o banco |
@@ -214,10 +220,20 @@ Por enquanto, a verificação é feita manualmente pelos endpoints (por exemplo,
   tempo poderia revelar se um e-mail está cadastrado. É de baixa severidade e não foi corrigido —
   fica registrado por transparência.
 - É o **único serviço da família sem testes automatizados** (ver seção 7).
-- Os valores padrão da chave JWT **divergem entre as fontes de configuração** (`appsettings.json`,
-  `k8s/secret.yaml` e `docker-compose.yml`). Rodando via `docker-compose`, tudo é alinhado com o
-  Catálogo; rodando isolado com os padrões do `appsettings.json`, os tokens não serão aceitos pelo
-  Catálogo (ver a nota da seção 5).
+- **Chave de assinatura JWT versionada em texto claro** no `appsettings.json`, no
+  `docker-compose.yml` (valor padrão) e no `k8s/secret.yaml` (Secret do Kubernetes usa apenas
+  base64, que **não é criptografia** — qualquer um com acesso ao manifesto lê o valor original).
+  Para uma demonstração/FIAP é aceitável; num deploy real, a chave deveria vir de um secret
+  manager e nunca ser commitada.
+- Este serviço (`Program.cs:50-51`) desabilita `ValidateIssuer`/`ValidateAudience` para validar
+  tokens em seus **próprios** endpoints protegidos (ex: `/api/health/secure`) — só confere
+  assinatura e validade. O Catálogo, por outro lado, valida os dois. Não é uma falha de segurança
+  em si (a assinatura ainda garante que o token veio de uma fonte com a chave certa), mas é uma
+  inconsistência de postura entre os serviços da mesma família.
+- **`Issuer`/`Audience` divergem entre ambientes** (ver nota da seção 5): em k8s/local o Usuario se
+  identifica como `FCG.Catalog.Api` (nome do serviço *validador*, não do emissor) — funciona porque
+  é apenas *string matching* contra o que o Catálogo espera, mas é confuso de manter. Recomendado
+  padronizar para `FCG.Usuario.Api`/`FCG.Usuario.Client` em todos os ambientes numa próxima limpeza.
 - No Kubernetes, o banco SQL Server usa um volume `emptyDir` — ou seja, **os dados são perdidos se
   o pod do banco reiniciar**. Serve para demonstração, não para produção.
 - Este serviço apenas **publica** o `UserCreatedEvent`; ele não confirma se a Notificação foi de
