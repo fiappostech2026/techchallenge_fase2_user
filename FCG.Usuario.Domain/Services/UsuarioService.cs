@@ -1,7 +1,6 @@
 ﻿using FCG.Usuario.Domain.DTOs;
 using FCG.Usuario.Domain.Entities;
 using FCG.Usuario.Domain.Interfaces;
-using Microsoft.AspNetCore.Authorization;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -19,13 +18,14 @@ namespace FCG.Usuario.Domain.Services
             _jwtService = jwtService;
         }
 
-        [Authorize]
-        public async Task<Guid> CriarUsuarioAsync(CriarUsuarioDto dto)
+        public async Task<Guid?> CriarUsuarioAsync(CriarUsuarioDto dto)
         {
+            ArgumentNullException.ThrowIfNull(dto);
+
             var usuarioExistente = await _usuarioRepository.ObterPorEmailAsync(dto.Email);
 
             if (usuarioExistente != null)
-                throw new Exception("E-mail já cadastrado.");
+                return null;
 
             var usuario = new UsuarioEntity
             {
@@ -37,21 +37,24 @@ namespace FCG.Usuario.Domain.Services
             };
 
             await _usuarioRepository.AdicionarAsync(usuario);
+            await _usuarioRepository.SalvarAlteracoesAsync();
 
             return usuario.Id;
         }
 
-        public async Task<LoginResponseDto> LoginAsync(LoginDto dto)
+        public async Task<LoginResponseDto?> LoginAsync(LoginDto dto)
         {
+            ArgumentNullException.ThrowIfNull(dto);
+
             var usuario = await _usuarioRepository.ObterPorEmailAsync(dto.Email);
 
             if (usuario == null)
-                throw new Exception("Usuário ou senha inválidos.");
+                return null;
 
             var senhaValida = BCrypt.Net.BCrypt.Verify(dto.Senha, usuario.SenhaHash);
 
             if (!senhaValida)
-                throw new Exception("Usuário ou senha inválidos.");
+                return null;
 
             return _jwtService.GerarToken(usuario);
         }

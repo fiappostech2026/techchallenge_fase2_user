@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: users-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: users-api
+  template:
+    metadata:
+      labels:
+        app: users-api
+    spec:
+      containers:
+        - name: users-api
+          image: fcg-users-api:latest
+          env:
+            - name: RABBITMQ__HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: users-config
+                  key: RABBITMQ__HOST
+            - name: RABBITMQ__VIRTUALHOST
+              valueFrom:
+                configMapKeyRef:
+                  name: users-config
+                  key: RABBITMQ__VIRTUALHOST
+            - name: RABBITMQ__USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: users-secret
+                  key: RABBITMQ__USERNAME
+            - name: RABBITMQ__PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: users-secret
+                  key: RABBITMQ__PASSWORD
+            - name: ConnectionStrings__DefaultConnection
+              valueFrom:
+                secretKeyRef:
+                  name: users-secret
+                  key: ConnectionStrings__DefaultConnection
+            - name: Jwt__SecretKey
+              valueFrom:
+                secretKeyRef:
+                  name: users-secret
+                  key: Jwt__SecretKey
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10

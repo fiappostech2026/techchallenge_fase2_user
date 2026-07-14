@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: users-config
+data:
+  RABBITMQ__HOST: "rabbitmq"
+  RABBITMQ__VIRTUALHOST: "/"
+  ACCEPT_EULA: "Y"

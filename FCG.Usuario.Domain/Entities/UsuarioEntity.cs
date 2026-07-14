@@ -1,4 +1,5 @@
-﻿using System;
+﻿using FCG.Usuario.Domain.Enums;
+using System;
 using System.Collections.Generic;
 using System.Text;
 
@@ -11,5 +12,6 @@ namespace FCG.Usuario.Domain.Entities
         public string Email { get; set; } = string.Empty;
         public string SenhaHash { get; set; } = string.Empty;
         public DateTime DataCadastro { get; set; }
+        public PerfilEnum Perfil { get; set; } = PerfilEnum.Usuario;
     }
 }

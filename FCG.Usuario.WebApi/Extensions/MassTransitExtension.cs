@@ -1,4 +1,4 @@
-﻿using FCG.Usuario.Domain.Configurations;
+﻿using FCG.Usuario.Domain.Dto;
 using MassTransit;
 
 namespace FCG.Usuario.WebApi.Extensions
@@ -9,22 +9,28 @@ namespace FCG.Usuario.WebApi.Extensions
             this IServiceCollection services,
             IConfiguration configuration)
         {
-            var rabbitSettings = configuration
-                .GetSection("RabbitMq")
-                .Get<RabbitMqSettings>();
+            var host = configuration["RabbitMQ:Host"] ?? "localhost";
+            var virtualHost = configuration["RabbitMQ:VirtualHost"] ?? "/";
+            var username = configuration["RabbitMQ:Username"] ?? "guest";
+            var password = configuration["RabbitMQ:Password"] ?? "guest";
 
             services.AddMassTransit(x =>
             {
+                x.SetEndpointNameFormatter(new KebabCaseEndpointNameFormatter("users", false));
+
                 x.UsingRabbitMq((context, cfg) =>
                 {
-                    cfg.Host(
-                        rabbitSettings!.Host,
-                        rabbitSettings.VirtualHost,
-                        h =>
-                        {
-                            h.Username(rabbitSettings.Username);
-                            h.Password(rabbitSettings.Password);
-                        });
+                    cfg.Host(host, virtualHost, h =>
+                    {
+                        h.Username(username);
+                        h.Password(password);
+                    });
+
+                    cfg.UseRawJsonSerializer(RawSerializerOptions.All, isDefault: true);
+
+                    cfg.Message<UserCreatedEvent>(msgCfg => msgCfg.SetEntityName("user-created-event"));
+
+                    cfg.ConfigureEndpoints(context);
                 });
             });
 

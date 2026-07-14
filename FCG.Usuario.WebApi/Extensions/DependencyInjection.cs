@@ -1,8 +1,10 @@
 ﻿using FCG.Usuario.Domain.Configurations;
 using FCG.Usuario.Domain.Interfaces;
 using FCG.Usuario.Domain.Services;
+using FCG.Usuario.Domain.Validators;
 using FCG.Usuario.Infra.Context;
 using FCG.Usuario.Infra.Repositories;
+using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 
 namespace FCG.Usuario.WebApi.Extensions
@@ -13,12 +15,9 @@ namespace FCG.Usuario.WebApi.Extensions
         {
             services.AddDbContext<UsuarioDbContext>(options =>
             {
-                options.UseSqlite(
+                options.UseSqlServer(
                     configuration.GetConnectionString("DefaultConnection"));
             });
-
-            services.Configure<RabbitMqSettings>(
-                    configuration.GetSection("RabbitMq"));
 
             services.Configure<JwtSettings>(
                     configuration.GetSection("Jwt"));
@@ -27,6 +26,8 @@ namespace FCG.Usuario.WebApi.Extensions
 
             services.AddScoped<IUsuarioService, UsuarioService>();
             services.AddScoped<IJwtService, JwtService>();
+
+            services.AddValidatorsFromAssemblyContaining<CriarUsuarioValidator>();
 
             return services;
         }

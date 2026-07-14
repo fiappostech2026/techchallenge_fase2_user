@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: users-sqlserver
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: users-sqlserver
+  template:
+    metadata:
+      labels:
+        app: users-sqlserver
+    spec:
+      containers:
+        - name: users-sqlserver
+          image: mcr.microsoft.com/mssql/server:2022-latest
+          ports:
+            - containerPort: 1433
+          env:
+            - name: ACCEPT_EULA
+              valueFrom:
+                configMapKeyRef:
+                  name: users-config
+                  key: ACCEPT_EULA
+            - name: MSSQL_SA_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: users-secret
+                  key: MSSQL_SA_PASSWORD
+          volumeMounts:
+            - name: users-sqlserver-data
+              mountPath: /var/opt/mssql
+      volumes:
+        - name: users-sqlserver-data
+          emptyDir: {}

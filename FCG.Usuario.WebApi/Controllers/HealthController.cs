@@ -4,6 +4,8 @@ using System.Security.Claims;
 
 namespace FCG.Usuario.WebApi.Controllers
 {
+    [ApiController]
+    [Route("api/health")]
     public class HealthController : ControllerBase
     {
         [HttpGet]

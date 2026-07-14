@@ -7,7 +7,7 @@ namespace FCG.Usuario.Domain.Interfaces
 {
     public interface IUsuarioService
     {
-        Task<Guid> CriarUsuarioAsync(CriarUsuarioDto dto);
-        Task<LoginResponseDto> LoginAsync(LoginDto dto);
+        Task<Guid?> CriarUsuarioAsync(CriarUsuarioDto dto);
+        Task<LoginResponseDto?> LoginAsync(LoginDto dto);
     }
 }

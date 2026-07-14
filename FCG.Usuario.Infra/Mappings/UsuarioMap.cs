@@ -11,10 +11,10 @@ namespace FCG.Usuario.Infra.Mappings
     {
         public void Configure(EntityTypeBuilder<UsuarioEntity> builder)
         {
-            builder.ToTable("Usuario");
+            builder.ToTable("Usuarios");
 
             builder.HasKey(x => x.Id)
-                .HasName("PK_Usuario"); ;
+                .HasName("PK_Usuarios");
 
             builder.Property(x => x.Nome)
                 .IsRequired()
@@ -30,6 +30,11 @@ namespace FCG.Usuario.Infra.Mappings
 
             builder.Property(x => x.DataCadastro)
                 .IsRequired();
+
+            builder.Property(x => x.Perfil)
+                .HasConversion<string>()
+                .IsRequired()
+                .HasMaxLength(20);
 
             builder.HasIndex(x => x.Email)
                 .IsUnique();
