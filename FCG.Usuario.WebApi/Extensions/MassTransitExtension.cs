@@ -13,6 +13,8 @@ namespace FCG.Usuario.WebApi.Extensions
             var virtualHost = configuration["RabbitMQ:VirtualHost"] ?? "/";
             var username = configuration["RabbitMQ:Username"] ?? "guest";
             var password = configuration["RabbitMQ:Password"] ?? "guest";
+            var port = configuration.GetValue<int?>("RabbitMQ:Port");
+            var useSsl = configuration.GetValue<bool>("RabbitMQ:UseSsl");
 
             services.AddMassTransit(x =>
             {
@@ -20,10 +22,13 @@ namespace FCG.Usuario.WebApi.Extensions
 
                 x.UsingRabbitMq((context, cfg) =>
                 {
-                    cfg.Host(host, virtualHost, h =>
+                    cfg.Host(BuildHostUri(host, port, virtualHost, useSsl), h =>
                     {
                         h.Username(username);
                         h.Password(password);
+
+                        if (useSsl)
+                            h.UseSsl(s => s.Protocol = System.Security.Authentication.SslProtocols.Tls12);
                     });
 
                     cfg.UseRawJsonSerializer(RawSerializerOptions.All, isDefault: true);
@@ -35,6 +40,17 @@ namespace FCG.Usuario.WebApi.Extensions
             });
 
             return services;
+        }
+
+        // rabbitmqs:// (TLS) exigido pelo CloudAMQP; rabbitmq:// (sem TLS) segue funcionando local
+        // com o RabbitMQ do docker-compose/k8s, sem porta/UseSsl configurados (comportamento antigo).
+        private static Uri BuildHostUri(string host, int? port, string virtualHost, bool useSsl)
+        {
+            var scheme = useSsl ? "rabbitmqs" : "rabbitmq";
+            var portSegment = port.HasValue ? $":{port}" : string.Empty;
+            var vhostSegment = virtualHost == "/" ? string.Empty : $"/{Uri.EscapeDataString(virtualHost)}";
+
+            return new Uri($"{scheme}://{host}{portSegment}{vhostSegment}");
         }
     }
 }
