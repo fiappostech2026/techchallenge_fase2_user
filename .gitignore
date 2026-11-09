@@ -4,3 +4,6 @@ obj/
 .vs/
 .idea/
 *.db
+
+# Secrets reais nunca vão para o Git (ver k8s/secret.yaml.example)
+k8s/secret.yaml

@@ -1,9 +1,19 @@
+# UsersAPI. A pipeline (azure-pipelines.yml) troca "fcg-users-api:latest"
+# pela imagem versionada do ACR (ex.: fcgacr.azurecr.io/fcg-users-api:42)
+# antes do kubectl apply — localmente (Docker Desktop) o valor abaixo continua valendo.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: users-api
 spec:
-  replicas: 1
+  replicas: 2
+  # Rolling Update sem downtime: sobe 1 Pod novo por vez (maxSurge) e só derruba
+  # um antigo depois que o novo passar no readinessProbe (maxUnavailable: 0).
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: users-api
@@ -16,56 +26,31 @@ spec:
         - name: users-api
           image: fcg-users-api:latest
           imagePullPolicy: IfNotPresent
-          env:
-            - name: RABBITMQ__HOST
-              valueFrom:
-                configMapKeyRef:
-                  name: users-config
-                  key: RABBITMQ__HOST
-            - name: RABBITMQ__VIRTUALHOST
-              valueFrom:
-                configMapKeyRef:
-                  name: users-config
-                  key: RABBITMQ__VIRTUALHOST
-            - name: RABBITMQ__USERNAME
-              valueFrom:
-                secretKeyRef:
-                  name: users-secret
-                  key: RABBITMQ__USERNAME
-            - name: RABBITMQ__PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: users-secret
-                  key: RABBITMQ__PASSWORD
-            - name: ConnectionStrings__DefaultConnection
-              valueFrom:
-                secretKeyRef:
-                  name: users-secret
-                  key: ConnectionStrings__DefaultConnection
-            - name: Jwt__SecretKey
-              valueFrom:
-                secretKeyRef:
-                  name: users-secret
-                  key: Jwt__SecretKey
-            - name: Jwt__Issuer
-              valueFrom:
-                configMapKeyRef:
-                  name: users-config
-                  key: Jwt__Issuer
-            - name: Jwt__Audience
-              valueFrom:
-                configMapKeyRef:
-                  name: users-config
-                  key: Jwt__Audience
+          ports:
+            - containerPort: 8080
+          # Configurações não sensíveis vêm do ConfigMap; credenciais vêm do Secret
+          # "users-secret", criado pela pipeline a partir do Azure DevOps (nunca do Git).
+          envFrom:
+            - configMapRef:
+                name: users-config
+            - secretRef:
+                name: users-secret
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
           livenessProbe:
             httpGet:
               path: /api/health
               port: 8080
-            initialDelaySeconds: 10
+            initialDelaySeconds: 20
             periodSeconds: 10
           readinessProbe:
             httpGet:
               path: /api/health
               port: 8080
             initialDelaySeconds: 10
-            periodSeconds: 10
+            periodSeconds: 5

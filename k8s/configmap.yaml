@@ -1,10 +1,11 @@
+# Somente configurações NÃO sensíveis. Credenciais e endereços de serviços
+# externos (SQL, RabbitMQ/CloudAMQP, JWT) ficam no Secret "users-secret" —
+# ver secret.yaml.example.
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: users-config
 data:
-  RABBITMQ__HOST: "rabbitmq"
-  RABBITMQ__VIRTUALHOST: "/"
   ACCEPT_EULA: "Y"
   Jwt__Issuer: "FCG.Catalog.Api"
   Jwt__Audience: "FCG.Catalog.Client"

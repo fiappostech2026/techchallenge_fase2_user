@@ -15,6 +15,11 @@ var jwtSettings = builder.Configuration
     .GetSection("Jwt")
     .Get<JwtSettings>();
 
+// A chave nunca fica no código: vem do Secret do Kubernetes (Jwt__SecretKey)
+// ou do dotnet user-secrets em desenvolvimento.
+if (string.IsNullOrWhiteSpace(jwtSettings?.SecretKey))
+    throw new InvalidOperationException("Jwt:SecretKey não configurada.");
+
 // Add services to the container.
 builder.Services.ConfigureDependencies(builder.Configuration);
 

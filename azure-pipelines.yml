@@ -1,0 +1,185 @@
+# Pipeline de CI/CD do UsersAPI (Azure DevOps).
+#
+#   push na main ──► Build & Test ──► Imagem (build + scan + push no ACR) ──► Deploy no AKS
+#   Pull Request ──► só Build & Test (valida antes do merge)
+#
+# Assim o que está na main é exatamente o que está rodando em produção.
+
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    exclude:
+      - README.md
+
+pr:
+  branches:
+    include:
+      - main
+
+variables:
+  # Segredos (senhas, chaves, endereços externos) — Library > Variable groups.
+  # Podem ser grupos comuns (variáveis marcadas como secretas) ou ligados ao Azure Key Vault.
+  - group: fcg-shared-secrets     # jwt-secret-key, rabbitmq-host, rabbitmq-vhost, rabbitmq-port, rabbitmq-use-ssl, rabbitmq-user, rabbitmq-password
+  - group: fcg-users-secrets      # users-sql-password
+
+  # Infraestrutura — ajuste para os nomes que vocês criaram no Azure.
+  - name: azureServiceConnection
+    value: fcg-azure              # Project settings > Service connections (tipo Azure Resource Manager)
+  - name: acrName
+    value: fcgacr                 # nome do Azure Container Registry (sem .azurecr.io)
+  - name: aksResourceGroup
+    value: rg-fcg
+  - name: aksClusterName
+    value: aks-fcg
+
+  - name: imageRepository
+    value: fcg-users-api
+  - name: imageTag
+    value: $(Build.BuildId)       # cada execução gera uma tag única e rastreável
+  - name: imageName
+    value: $(acrName).azurecr.io/$(imageRepository):$(imageTag)
+
+stages:
+  - stage: Build
+    displayName: Build & Test
+    jobs:
+      - job: BuildTest
+        displayName: Compilar e rodar testes unitários
+        pool:
+          vmImage: ubuntu-latest
+        steps:
+          - task: UseDotNet@2
+            displayName: Instalar .NET 10
+            inputs:
+              packageType: sdk
+              version: 10.x
+
+          - script: dotnet build FCG.Usuario.slnx -c Release
+            displayName: dotnet build
+
+          - script: >
+              dotnet test FCG.Usuario.slnx -c Release --no-build
+              --logger trx --results-directory $(Agent.TempDirectory)/tests
+              --collect "XPlat Code Coverage"
+            displayName: dotnet test
+
+          - task: PublishTestResults@2
+            displayName: Publicar resultados dos testes
+            condition: succeededOrFailed()
+            inputs:
+              testResultsFormat: VSTest
+              testResultsFiles: '$(Agent.TempDirectory)/tests/**/*.trx'
+
+          - task: PublishCodeCoverageResults@2
+            displayName: Publicar cobertura de código
+            condition: succeededOrFailed()
+            inputs:
+              summaryFileLocation: '$(Agent.TempDirectory)/tests/**/coverage.cobertura.xml'
+
+  - stage: Image
+    displayName: Imagem Docker
+    dependsOn: Build
+    condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
+    jobs:
+      - job: BuildScanPush
+        displayName: Build, scan de vulnerabilidades e push no ACR
+        pool:
+          vmImage: ubuntu-latest
+        steps:
+          - script: docker build -t $(imageName) .
+            displayName: docker build ($(imageTag))
+
+          # Security scan (desejável no Tech Challenge): o Trivy lista CVEs HIGH/CRITICAL
+          # da imagem. --exit-code 0 só reporta; troque para 1 para bloquear a pipeline.
+          - script: >
+              docker run --rm -v /var/run/docker.sock:/var/run/docker.sock
+              aquasec/trivy:0.58.1 image --no-progress --ignore-unfixed
+              --severity HIGH,CRITICAL --exit-code 0 $(imageName)
+            displayName: Trivy - scan de vulnerabilidades
+
+          - task: AzureCLI@2
+            displayName: docker push no ACR
+            inputs:
+              azureSubscription: ${{ variables.azureServiceConnection }}
+              scriptType: bash
+              scriptLocation: inlineScript
+              inlineScript: |
+                az acr login --name $(acrName)
+                docker push $(imageName)
+
+  - stage: Deploy
+    displayName: Deploy no AKS
+    dependsOn: Image
+    condition: and(succeeded(), ne(variables['Build.Reason'], 'PullRequest'))
+    jobs:
+      # "deployment" + environment: o Azure DevOps registra o histórico de deploys
+      # em Pipelines > Environments > fcg-production (dá para exigir aprovação lá).
+      - deployment: DeployUsers
+        displayName: Rolling update do users-api
+        pool:
+          vmImage: ubuntu-latest
+        environment: fcg-production
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+
+                - task: AzureCLI@2
+                  displayName: Aplicar Secret, manifestos e nova imagem
+                  inputs:
+                    azureSubscription: ${{ variables.azureServiceConnection }}
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      set -euo pipefail
+                      az aks get-credentials -g $(aksResourceGroup) -n $(aksClusterName) --overwrite-existing
+
+                      # Secret criado a cada deploy a partir do Azure DevOps — nunca vem do Git.
+                      kubectl create secret generic users-secret \
+                        --from-literal=MSSQL_SA_PASSWORD="$SQL_PASSWORD" \
+                        --from-literal=ConnectionStrings__DefaultConnection="Server=users-sqlserver,1433;Database=users;User Id=sa;Password=$SQL_PASSWORD;TrustServerCertificate=True" \
+                        --from-literal=Jwt__SecretKey="$JWT_SECRET_KEY" \
+                        --from-literal=RABBITMQ__HOST="$RABBITMQ_HOST" \
+                        --from-literal=RABBITMQ__VIRTUALHOST="$RABBITMQ_VHOST" \
+                        --from-literal=RABBITMQ__PORT="$RABBITMQ_PORT" \
+                        --from-literal=RABBITMQ__USESSL="$RABBITMQ_USE_SSL" \
+                        --from-literal=RABBITMQ__USERNAME="$RABBITMQ_USER" \
+                        --from-literal=RABBITMQ__PASSWORD="$RABBITMQ_PASSWORD" \
+                        --dry-run=client -o yaml | kubectl apply -f -
+
+                      # Dependências do serviço (bancos, cache) e configuração.
+                      kubectl apply \
+                        -f k8s/configmap.yaml \
+                        -f k8s/sqlserver-deployment.yaml -f k8s/sqlserver-service.yaml \
+                        -f k8s/service.yaml
+
+                      # A API com a imagem recém-publicada: dispara o Rolling Update.
+                      sed "s|image: fcg-users-api:latest|image: $(imageName)|" k8s/deployment.yaml | kubectl apply -f -
+
+                      # Só termina com sucesso quando todos os Pods novos estiverem prontos.
+                      kubectl rollout status deployment/users-api --timeout=300s
+                    env:
+                      SQL_PASSWORD: $(users-sql-password)
+                      JWT_SECRET_KEY: $(jwt-secret-key)
+                      RABBITMQ_HOST: $(rabbitmq-host)
+                      RABBITMQ_VHOST: $(rabbitmq-vhost)
+                      RABBITMQ_PORT: $(rabbitmq-port)
+                      RABBITMQ_USE_SSL: $(rabbitmq-use-ssl)
+                      RABBITMQ_USER: $(rabbitmq-user)
+                      RABBITMQ_PASSWORD: $(rabbitmq-password)
+
+                # Se o rollout falhar (Pod novo não fica pronto), volta para a versão anterior.
+                # Os Pods antigos nunca saíram do ar por causa do maxUnavailable: 0.
+                - task: AzureCLI@2
+                  displayName: Rollback automático
+                  condition: failed()
+                  inputs:
+                    azureSubscription: ${{ variables.azureServiceConnection }}
+                    scriptType: bash
+                    scriptLocation: inlineScript
+                    inlineScript: |
+                      az aks get-credentials -g $(aksResourceGroup) -n $(aksClusterName) --overwrite-existing
+                      kubectl rollout undo deployment/users-api

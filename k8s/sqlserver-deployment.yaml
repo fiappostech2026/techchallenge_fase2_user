@@ -1,9 +1,25 @@
+# SQL Server dedicado ao UsersAPI. Os dados ficam num disco persistente (PVC):
+# no AKS vira um Azure Managed Disk; no Docker Desktop, uma pasta do host.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: users-sqlserver-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: users-sqlserver
 spec:
   replicas: 1
+  # Recreate (e não RollingUpdate): o disco só pode ser montado por um Pod por vez.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: users-sqlserver
@@ -12,6 +28,10 @@ spec:
       labels:
         app: users-sqlserver
     spec:
+      # O SQL Server roda como o usuário mssql (uid 10001); fsGroup dá a ele
+      # permissão de escrita no disco montado.
+      securityContext:
+        fsGroup: 10001
       containers:
         - name: users-sqlserver
           image: mcr.microsoft.com/mssql/server:2022-latest
@@ -28,9 +48,16 @@ spec:
                 secretKeyRef:
                   name: users-secret
                   key: MSSQL_SA_PASSWORD
+          resources:
+            requests:
+              cpu: 250m
+              memory: 1Gi
+            limits:
+              memory: 2Gi
           volumeMounts:
             - name: users-sqlserver-data
               mountPath: /var/opt/mssql
       volumes:
         - name: users-sqlserver-data
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: users-sqlserver-data

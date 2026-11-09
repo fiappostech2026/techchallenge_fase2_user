@@ -1,4 +1,5 @@
 <Solution>
+  <Project Path="FCG.Usuario.Tests/FCG.Usuario.Tests.csproj" />
   <Project Path="FCG.Usuario.WebApi/FCG.Usuario.WebApi.csproj" />
   <Project Path="FCG.Usuario.Domain/FCG.Usuario.Domain.csproj" />
   <Project Path="FCG.Usuario.Infra/FCG.Usuario.Infra.csproj" />

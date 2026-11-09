@@ -6,4 +6,6 @@ RUN dotnet publish FCG.Usuario.WebApi/FCG.Usuario.WebApi.csproj -c Release -o /a
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
 COPY --from=build /app/publish .
+# Usuário sem privilégios de root (já existe na imagem oficial do .NET).
+USER $APP_UID
 ENTRYPOINT ["dotnet", "FCG.Usuario.WebApi.dll"]
