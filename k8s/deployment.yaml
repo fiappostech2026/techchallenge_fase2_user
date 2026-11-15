@@ -1,5 +1,5 @@
-# UsersAPI. A pipeline (azure-pipelines.yml) troca "fcg-users-api:latest"
-# pela imagem versionada do ACR (ex.: fcgacr.azurecr.io/fcg-users-api:42)
+# UsersAPI. A pipeline (.github/workflows/ci-cd.yml) troca "fcg-users-api:latest"
+# pela imagem versionada do ACR (ex.: <ACR_NAME>.azurecr.io/fcg-users-api:42)
 # antes do kubectl apply — localmente (Docker Desktop) o valor abaixo continua valendo.
 apiVersion: apps/v1
 kind: Deployment
@@ -29,7 +29,7 @@ spec:
           ports:
             - containerPort: 8080
           # Configurações não sensíveis vêm do ConfigMap; credenciais vêm do Secret
-          # "users-secret", criado pela pipeline a partir do Azure DevOps (nunca do Git).
+          # "users-secret", criado pela pipeline a partir dos Secrets do GitHub (nunca do Git).
           envFrom:
             - configMapRef:
                 name: users-config

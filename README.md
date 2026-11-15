@@ -116,7 +116,7 @@ techchallenge_fase2_user/
 │   └── Validators/                # testes da validação do cadastro (CriarUsuarioValidator)
 ├── k8s/                            # manifestos de deploy no Kubernetes (ver seção 6)
 │   └── secret.yaml.example        # MODELO do Secret, sem valores reais (o secret.yaml de verdade nunca vai para o Git)
-├── azure-pipelines.yml            # pipeline de CI/CD no Azure DevOps (ver seção 8)
+├── .github/workflows/ci-cd.yml    # pipeline de CI/CD no GitHub Actions (ver seção 8)
 ├── Dockerfile                      # receita para empacotar este serviço em um container
 └── .dockerignore                   # lista do que NÃO entra na imagem Docker (bin/, obj/, k8s/, etc.)
 ```
@@ -188,20 +188,20 @@ docker run --rm \
 
 A coluna **"Segredo?"** indica se o valor é sensível. Valores sensíveis **nunca** ficam no Git:
 localmente vêm do `dotnet user-secrets` ou de variáveis de ambiente; no Kubernetes (AKS) vêm do
-Secret `users-secret`, que a pipeline cria a partir dos *Variable Groups* do Azure DevOps (ver
+Secret `users-secret`, que a pipeline cria a partir dos *Secrets* do repositório no GitHub (ver
 seção 8).
 
 | Variável | Descrição | Segredo? | Valor padrão (local) | De onde vem no AKS |
 |---|---|---|---|---|
-| `RabbitMQ__Host` | Endereço do servidor RabbitMQ | Sim (endereço externo) | `localhost` | Secret ← `rabbitmq-host` (`fcg-shared-secrets`) |
-| `RabbitMQ__VirtualHost` | "Vhost" (espaço isolado) do RabbitMQ a usar | Sim | `/` | Secret ← `rabbitmq-vhost` (`fcg-shared-secrets`) |
-| `RabbitMQ__Port` | Porta do RabbitMQ (opcional) | Sim | — (porta padrão) | Secret ← `rabbitmq-port` (`fcg-shared-secrets`) |
-| `RabbitMQ__UseSsl` | Se a conexão com o RabbitMQ usa criptografia (TLS) | Sim | `false` | Secret ← `rabbitmq-use-ssl` (`fcg-shared-secrets`) |
-| `RabbitMQ__Username` | Usuário de acesso ao RabbitMQ | **Sim** | `guest` (se nada for informado) | Secret ← `rabbitmq-user` (`fcg-shared-secrets`) |
-| `RabbitMQ__Password` | Senha de acesso ao RabbitMQ | **Sim** | `guest` (se nada for informado) | Secret ← `rabbitmq-password` (`fcg-shared-secrets`) |
-| `ConnectionStrings__DefaultConnection` | Endereço e credenciais do banco de dados SQL Server | **Sim** | — (obrigatório informar) | Secret, montado pela pipeline com `users-sql-password` (`fcg-users-secrets`) |
-| `MSSQL_SA_PASSWORD` | Senha do administrador do SQL Server (usada pelo container do banco) | **Sim** | — | Secret ← `users-sql-password` (`fcg-users-secrets`) |
-| `Jwt__SecretKey` | Chave secreta usada para assinar o "crachá digital" (JWT) do usuário | **Sim** | — (obrigatório; sem ela o serviço não inicia) | Secret ← `jwt-secret-key` (`fcg-shared-secrets`) |
+| `RabbitMQ__Host` | Endereço do servidor RabbitMQ | Sim (endereço externo) | `localhost` | Secret ← `RABBITMQ_HOST` (GitHub) |
+| `RabbitMQ__VirtualHost` | "Vhost" (espaço isolado) do RabbitMQ a usar | Sim | `/` | Secret ← `RABBITMQ_VHOST` (GitHub) |
+| `RabbitMQ__Port` | Porta do RabbitMQ (opcional) | Sim | — (porta padrão) | Secret ← `RABBITMQ_PORT` (GitHub) |
+| `RabbitMQ__UseSsl` | Se a conexão com o RabbitMQ usa criptografia (TLS) | Sim | `false` | Secret ← `RABBITMQ_USE_SSL` (GitHub) |
+| `RabbitMQ__Username` | Usuário de acesso ao RabbitMQ | **Sim** | `guest` (se nada for informado) | Secret ← `RABBITMQ_USER` (GitHub) |
+| `RabbitMQ__Password` | Senha de acesso ao RabbitMQ | **Sim** | `guest` (se nada for informado) | Secret ← `RABBITMQ_PASSWORD` (GitHub) |
+| `ConnectionStrings__DefaultConnection` | Endereço e credenciais do banco de dados SQL Server | **Sim** | — (obrigatório informar) | Secret, montado pela pipeline com `USERS_SQL_PASSWORD` (GitHub) |
+| `MSSQL_SA_PASSWORD` | Senha do administrador do SQL Server (usada pelo container do banco) | **Sim** | — | Secret ← `USERS_SQL_PASSWORD` (GitHub) |
+| `Jwt__SecretKey` | Chave secreta usada para assinar o "crachá digital" (JWT) do usuário | **Sim** | — (obrigatório; sem ela o serviço não inicia) | Secret ← `JWT_SECRET_KEY` (GitHub) |
 | `Jwt__Issuer` | Quem emite o token (carimbado no JWT) | Não | `FCG.Catalog.Api` (k8s/local) — `FCG.Usuario.Api` (docker-compose) | ConfigMap `users-config` |
 | `Jwt__Audience` | Para quem o token se destina (carimbado no JWT) | Não | `FCG.Catalog.Client` (k8s/local) — `FCG.Usuario.Client` (docker-compose) | ConfigMap `users-config` |
 
@@ -222,9 +222,11 @@ seção 8).
 >   (`FCG.Catalog.Api`)/`Audience` (`FCG.Catalog.Client`) do Catálogo; a `SecretKey` **não** fica
 >   mais no arquivo — você precisa configurar a mesma chave nos dois serviços (via
 >   `user-secrets` ou variável de ambiente, ver seção 4).
-> - **Kubernetes (AKS):** a pipeline cria o Secret `users-secret` com o `Jwt__SecretKey` vindo da
->   variável `jwt-secret-key` do grupo **compartilhado** `fcg-shared-secrets` — o mesmo grupo que o
->   Catálogo usa, então a chave é a mesma por construção. `k8s/configmap.yaml` injeta
+> - **Kubernetes (AKS):** a pipeline cria o Secret `users-secret` com o `Jwt__SecretKey` vindo do
+>   Secret `JWT_SECRET_KEY` do GitHub. Cada repositório guarda os próprios Secrets, então o
+>   `JWT_SECRET_KEY` precisa ser cadastrado com **o mesmo valor** aqui e no repositório do
+>   Catálogo (se o time usar uma *organization* no GitHub, dá para cadastrar uma vez só como
+>   *organization secret*, compartilhado pelos dois). `k8s/configmap.yaml` injeta
 >   `Jwt__Issuer`/`Jwt__Audience` alinhados com o Catálogo.
 > - **`docker-compose` (repositório de orquestração):** ambos recebem o mesmo `JWT_SECRET_KEY`,
 >   mas com `Issuer`/`Audience` diferentes dos usados em k8s/local (`FCG.Usuario.Api`/
@@ -251,8 +253,8 @@ Os manifestos estão na pasta `/k8s` deste repositório:
 
 O arquivo `k8s/secret.yaml` com os valores reais **não fica no Git** (está no `.gitignore`).
 
-- **No AKS (produção):** quem cria o Secret é a própria pipeline do Azure DevOps, a cada deploy,
-  usando os valores guardados nos *Variable Groups* (ver seção 8). Ninguém precisa mexer em
+- **No AKS (produção):** quem cria o Secret é a própria pipeline do GitHub Actions, a cada deploy,
+  usando os valores guardados nos *Secrets* do repositório (ver seção 8). Ninguém precisa mexer em
   arquivo nenhum.
 - **Localmente (ex.: Kubernetes do Docker Desktop):** copie o modelo, preencha os valores e aplique:
 
@@ -315,11 +317,11 @@ Os mesmos testes rodam automaticamente na pipeline de CI/CD a cada mudança (ver
 
 ---
 
-## 8. CI/CD com Azure DevOps
+## 8. CI/CD com GitHub Actions
 
 **CI/CD** é a "esteira automática" que leva o código do repositório até o ar. Neste serviço ela é
-definida no arquivo `azure-pipelines.yml` e roda no **Azure DevOps**, publicando no **AKS**
-(o Kubernetes gerenciado do Azure).
+definida no arquivo `.github/workflows/ci-cd.yml` e roda no **GitHub Actions** (o robô de
+automação do próprio GitHub), publicando no **AKS** (o Kubernetes gerenciado do Azure).
 
 ```
 Pull Request ──► Build & Test  (só valida, não publica nada)
@@ -330,21 +332,37 @@ push na main ──► Build & Test ──► Imagem (build + scan + push no ACR
 ### As três etapas
 
 1. **Build & Test** — compila o projeto e roda os testes unitários (seção 7). Os resultados dos
-   testes e a **cobertura de código** ficam publicados na própria execução da pipeline. Essa
-   etapa roda também em todo *Pull Request*, para pegar erros **antes** de juntar o código na `main`.
+   testes e a **cobertura de código** ficam disponíveis para download na própria execução (item
+   `TestResults`, na página da execução). Essa etapa roda também em todo *Pull Request*, para
+   pegar erros **antes** de juntar o código na `main`.
 2. **Imagem** — empacota o serviço em uma imagem Docker, passa um **scanner de vulnerabilidades**
    (Trivy, procurando falhas de gravidade alta ou crítica) e envia a imagem para o **ACR** (Azure
    Container Registry, o "depósito" de imagens). Cada execução gera uma etiqueta única — o número
-   da execução (`Build.BuildId`) —, então dá para saber exatamente qual versão está no ar.
-3. **Deploy no AKS** — roda no *environment* `fcg-production` do Azure DevOps (que guarda o
-   histórico de deploys e permite exigir aprovação manual). Ela:
-   - cria/atualiza o Secret `users-secret` com os valores dos *Variable Groups*;
+   da execução (`github.run_number`) —, então dá para saber exatamente qual versão está no ar.
+3. **Deploy no AKS** — roda no *environment* `production` do GitHub (em **Settings >
+   Environments**, que guarda o histórico de deploys e permite exigir aprovação manual). Ela:
+   - cria/atualiza o Secret `users-secret` com os valores dos *Secrets* do GitHub;
    - aplica o ConfigMap, o banco SQL Server e os Services;
    - troca a imagem `fcg-users-api:latest` do `deployment.yaml` pela imagem recém-publicada
-     (`<acr>.azurecr.io/fcg-users-api:<BuildId>`), o que dispara o **Rolling Update** (seção 6);
+     (`<acr>.azurecr.io/fcg-users-api:<número da execução>`), o que dispara o **Rolling Update**
+     (seção 6);
    - espera até 5 minutos todas as cópias novas ficarem prontas (`kubectl rollout status`).
 
 As etapas Imagem e Deploy **não rodam** em Pull Requests.
+
+### Como rodar manualmente
+
+- **Antes do merge:** o deploy de teste roda com um `git push` na branch `tech_fase_4`. O
+  GitHub só mostra o botão **Run workflow** depois que o arquivo do workflow existe na `main`;
+  por isso, até o merge, a `tech_fase_4` também dispara a pipeline (provisório, sai depois do
+  merge).
+- **Depois do merge:** a pipeline roda sozinha a cada *push* na `main` ou pode ser disparada
+  "na mão":
+  1. No GitHub, abra a aba **Actions** do repositório.
+  2. Na lista da esquerda, clique em **CI/CD UsersAPI**.
+  3. Clique em **Run workflow** e confirme.
+
+Nos dois casos as três etapas rodam, inclusive o deploy no AKS.
 
 ### Rollback automático
 
@@ -355,18 +373,51 @@ pronta, o serviço continua no ar durante todo esse processo.
 
 ### Nenhuma credencial no código
 
-Todas as senhas e chaves ficam guardadas no Azure DevOps, em **Pipelines > Library > Variable
-groups**, marcadas como secretas (ou ligadas a um Azure Key Vault):
+Todas as senhas e chaves ficam guardadas no próprio GitHub, em **Settings > Secrets and
+variables > Actions**. Lá existem dois tipos de cadastro:
 
-| Variable group | Variáveis |
+- **Secrets** — valores sensíveis. Depois de salvos, ninguém consegue ver o conteúdo de novo (nem
+  nos logs da pipeline, onde aparecem como `***`).
+- **Variables** — nomes de infraestrutura que não são segredo, mas mudam de ambiente para ambiente.
+
+**Secrets:**
+
+| Secret | Para que serve |
 |---|---|
-| `fcg-shared-secrets` (compartilhado com os outros serviços) | `jwt-secret-key`, `rabbitmq-host`, `rabbitmq-vhost`, `rabbitmq-port`, `rabbitmq-use-ssl`, `rabbitmq-user`, `rabbitmq-password` |
-| `fcg-users-secrets` (só deste serviço) | `users-sql-password` |
+| `AZURE_CLIENT_ID` | Identificador da "conta de robô" (App Registration) que a pipeline usa no Azure |
+| `AZURE_TENANT_ID` | Identificador da organização (tenant) no Azure |
+| `AZURE_SUBSCRIPTION_ID` | Identificador da assinatura do Azure onde estão o ACR e o AKS |
+| `USERS_SQL_PASSWORD` | Senha do SQL Server deste serviço |
+| `JWT_SECRET_KEY` | Chave do JWT — precisa ter o **mesmo valor** cadastrado no repositório do Catálogo (seção 5) |
+| `RABBITMQ_HOST` | Endereço do RabbitMQ |
+| `RABBITMQ_VHOST` | "Vhost" do RabbitMQ |
+| `RABBITMQ_PORT` | Porta do RabbitMQ (pode ficar vazio para usar a porta padrão) |
+| `RABBITMQ_USE_SSL` | `true` ou `false` — se a conexão com o RabbitMQ usa criptografia |
+| `RABBITMQ_USER` | Usuário do RabbitMQ |
+| `RABBITMQ_PASSWORD` | Senha do RabbitMQ |
+
+**Variables:**
+
+| Variable | Para que serve |
+|---|---|
+| `ACR_NAME` | Nome do Azure Container Registry (sem o `.azurecr.io`) |
+| `AKS_RESOURCE_GROUP` | Grupo de recursos (*resource group*) do Azure onde está o cluster |
+| `AKS_CLUSTER_NAME` | Nome do cluster AKS |
 
 A pipeline lê esses valores e cria o Secret do Kubernetes na hora do deploy — eles nunca passam
-pelo Git. Além dos segredos, o arquivo tem alguns nomes de infraestrutura que precisam ser
-ajustados para o ambiente de cada um: `azureServiceConnection` (`fcg-azure`), `acrName` (`fcgacr`),
-`aksResourceGroup` (`rg-fcg`) e `aksClusterName` (`aks-fcg`).
+pelo Git.
+
+### Login no Azure sem senha (OIDC)
+
+Para publicar no ACR e no AKS, a pipeline precisa entrar no Azure. Em vez de guardar uma senha do
+Azure no GitHub, ela usa **OIDC**: a cada execução, o GitHub emite um "crachá temporário" que diz
+"sou a pipeline do repositório `fiappostech2026/techchallenge_fase2_user`, rodando no environment
+`production`". O Azure foi configurado (com uma *credencial federada* na App Registration) para
+confiar **só** nesse crachá exato e devolve um acesso que vale por pouco tempo.
+
+Por isso os jobs de Imagem e Deploy declaram `environment: production`: sem isso o crachá teria
+outro "assunto" (*subject*) e o Azure recusaria o login. E os três `AZURE_*` da tabela acima são só
+identificadores, não senhas — sozinhos, não dão acesso a nada.
 
 ---
 
