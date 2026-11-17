@@ -14,8 +14,7 @@ namespace FCG.Usuario.WebApi.Controllers
             return Ok(new
             {
                 status = "UP",
-                application = "FCG.Usuario.WebApi",
-                version = "fase4-live-deploy",
+                application = "FCG.Usuario.WebApi", 
                 date = DateTime.UtcNow
             });
         }
