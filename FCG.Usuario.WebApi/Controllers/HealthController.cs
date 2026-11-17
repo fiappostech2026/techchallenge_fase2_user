@@ -15,6 +15,7 @@ namespace FCG.Usuario.WebApi.Controllers
             {
                 status = "UP",
                 application = "FCG.Usuario.WebApi",
+                version = "teste alteracao - cd",
                 date = DateTime.UtcNow
             });
         }
